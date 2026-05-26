@@ -77,8 +77,11 @@ wrangler secret put CRONOMETER_PASSWORD</pre></li>
 			<li>Verify it works: <a href="/health?verify=1">/health?verify=1</a></li>
 			<li>Add this server to Claude with your bearer token (see README).</li>
 		</ol>
-		<div class="note">Tools: <code>get_nutrition_diary</code>, <code>get_nutrition_summary</code>,
-			<code>get_goals</code>, <code>search_food</code>, <code>log_food</code>.</div>
+		<div class="note"><strong>Read:</strong> <code>get_nutrition_diary</code>, <code>get_nutrition_summary</code>,
+			<code>get_goals</code>, <code>get_nutrition_scores</code>, <code>search_food</code>,
+			<code>get_fasting_history</code>, <code>get_fasting_stats</code><br>
+			<strong>Write:</strong> <code>log_food</code>, <code>delete_food</code>, <code>update_food</code>,
+			<code>copy_day</code>, <code>mark_day_complete</code>, <code>create_custom_food</code></div>
 		<p style="margin-top:1rem"><a href="/health">Health check</a></p>
 	</div>
 </div></body></html>`);

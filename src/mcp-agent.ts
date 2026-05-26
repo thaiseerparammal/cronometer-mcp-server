@@ -11,6 +11,7 @@ import {
 	averageMacros,
 	enumerateDates,
 	MEAL_GROUPS,
+	MEAL_NAMES,
 	type MealName,
 	nowTime,
 	parseConsumed,
@@ -80,8 +81,7 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 					const entries = parseDiary(diaryRaw);
 					const totals = parseConsumed(diaryRaw);
 
-					// Diary entries carry only a foodId, so resolve real food names
-					// via get_food for each unique id (capped to keep it snappy).
+					// Resolve real food names via get_food for each unique foodId.
 					const nameById = new Map<number, string>();
 					const uniqueIds = [
 						...new Set(
@@ -108,7 +108,15 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 										const name =
 											(e.foodId != null && nameById.get(e.foodId)) || e.name;
 										const grams = e.grams != null ? ` — ${e.grams} g` : "";
-										return `   - ${name}${grams}`;
+										const meal =
+											e.mealGroup != null && MEAL_NAMES[e.mealGroup]
+												? ` [${MEAL_NAMES[e.mealGroup]}]`
+												: "";
+										const sid =
+											e.servingId != null
+												? ` [serving_id: ${e.servingId}]`
+												: "";
+										return `   - ${name}${grams}${meal}${sid}`;
 									})
 									.join("\n")
 							: "No food logged for this date.";
@@ -187,7 +195,6 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 		this.server.tool("get_goals", {}, async () => {
 			try {
 				const client = this.getClient();
-				// Goal targets are computed into the diary summary (summary.macros).
 				const diaryRaw = await client.getDiary(toCronoDay(todayDate()));
 				const { goals, raw } = parseGoals(diaryRaw);
 
@@ -204,6 +211,42 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 				return handleError(error);
 			}
 		});
+
+		// ============================================
+		// READ — NUTRITION SCORES
+		// ============================================
+		this.server.tool(
+			"get_nutrition_scores",
+			{
+				date: z
+					.string()
+					.optional()
+					.describe("Date in YYYY-MM-DD format. Defaults to today."),
+			},
+			async ({ date }) => {
+				try {
+					const d = date ?? todayDate();
+					validateDate(d, "date");
+					const client = this.getClient();
+					const raw = await client.getNutritionScores(toCronoDay(d));
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Nutrition quality scores for ${d}`,
+							},
+							{
+								type: "text",
+								text: `\n\nRaw scores:\n${JSON.stringify(raw, null, 2)}`,
+							},
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
 
 		// ============================================
 		// READ — FOOD SEARCH
@@ -289,7 +332,6 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 
 					const client = this.getClient();
 
-					// Resolve a measure id if none provided: prefer the food's default.
 					let resolvedMeasureId = measure_id;
 					if (resolvedMeasureId == null) {
 						const food = await client.getFood(food_id);
@@ -322,5 +364,337 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 				}
 			},
 		);
+
+		// ============================================
+		// WRITE — DELETE FOOD (remove diary entries)
+		// ============================================
+		this.server.tool(
+			"delete_food",
+			{
+				serving_ids: z
+					.array(z.union([z.string(), z.number()]))
+					.min(1)
+					.describe(
+						"One or more serving_id values to delete. Get these from get_nutrition_diary.",
+					),
+				date: z
+					.string()
+					.optional()
+					.describe("Date the entries are on (YYYY-MM-DD). Defaults to today."),
+			},
+			async ({ serving_ids, date }) => {
+				try {
+					const d = date ?? todayDate();
+					validateDate(d, "date");
+					const client = this.getClient();
+					const count = await client.deleteServings(toCronoDay(d), serving_ids);
+					return {
+						content: [
+							{
+								type: "text",
+								text:
+									count > 0
+										? `✓ Deleted ${count} serving(s) from ${d}.`
+										: `No matching servings found on ${d}. Check the serving_ids from get_nutrition_diary.`,
+							},
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// WRITE — UPDATE FOOD (change amount or meal)
+		// ============================================
+		this.server.tool(
+			"update_food",
+			{
+				serving_id: z
+					.union([z.string(), z.number()])
+					.describe(
+						"serving_id of the entry to update. Get this from get_nutrition_diary.",
+					),
+				grams: z
+					.number()
+					.positive()
+					.optional()
+					.describe("New amount in grams."),
+				meal_name: z
+					.enum(["breakfast", "lunch", "dinner", "snacks"])
+					.optional()
+					.describe("Move the entry to a different meal."),
+				date: z
+					.string()
+					.optional()
+					.describe("Date the entry is on (YYYY-MM-DD). Defaults to today."),
+			},
+			async ({ serving_id, grams, meal_name, date }) => {
+				try {
+					const d = date ?? todayDate();
+					validateDate(d, "date");
+					if (grams == null && meal_name == null) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: "Provide at least one of: grams, meal_name.",
+								},
+							],
+						};
+					}
+					const client = this.getClient();
+					const mealGroup =
+						meal_name != null ? MEAL_GROUPS[meal_name as MealName] : undefined;
+					const raw = await client.updateServing({
+						day: toCronoDay(d),
+						servingId: serving_id,
+						grams,
+						mealGroup,
+					});
+					const parts: string[] = [];
+					if (grams != null) parts.push(`${grams} g`);
+					if (meal_name != null) parts.push(`moved to ${meal_name}`);
+					return {
+						content: [
+							{
+								type: "text",
+								text: `✓ Updated serving ${serving_id} on ${d}: ${parts.join(", ")}.`,
+							},
+							{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// WRITE — COPY DAY (duplicate diary to another day)
+		// ============================================
+		this.server.tool(
+			"copy_day",
+			{
+				from_date: z
+					.string()
+					.optional()
+					.describe(
+						"Date to copy FROM (YYYY-MM-DD). Defaults to yesterday.",
+					),
+				to_date: z
+					.string()
+					.optional()
+					.describe("Date to copy TO (YYYY-MM-DD). Defaults to today."),
+			},
+			async ({ from_date, to_date }) => {
+				try {
+					// Default: yesterday → today
+					const today = todayDate();
+					const yesterday = new Date(Date.now() - 86_400_000)
+						.toISOString()
+						.slice(0, 10);
+					const toD = to_date ?? today;
+					const fromD = from_date ?? yesterday;
+					validateDate(fromD, "from_date");
+					validateDate(toD, "to_date");
+
+					const client = this.getClient();
+					const raw = await client.copyDay(toCronoDay(fromD), toCronoDay(toD));
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: `✓ Copied diary entries from ${fromD} to ${toD}.`,
+							},
+							{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// WRITE — MARK DAY COMPLETE
+		// ============================================
+		this.server.tool(
+			"mark_day_complete",
+			{
+				date: z
+					.string()
+					.optional()
+					.describe("Date in YYYY-MM-DD format. Defaults to today."),
+				complete: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe("true = mark complete, false = mark incomplete."),
+			},
+			async ({ date, complete }) => {
+				try {
+					const d = date ?? todayDate();
+					validateDate(d, "date");
+					const client = this.getClient();
+					const raw = await client.setDayComplete(toCronoDay(d), complete ?? true);
+					const status = (complete ?? true) ? "complete" : "incomplete";
+					return {
+						content: [
+							{ type: "text", text: `✓ Marked ${d} as ${status}.` },
+							{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// WRITE — CREATE CUSTOM FOOD
+		// ============================================
+		this.server.tool(
+			"create_custom_food",
+			{
+				name: z.string().describe("Food name (e.g. 'My Protein Bar')."),
+				calories: z.number().nonnegative().describe("Calories per serving."),
+				protein_g: z.number().nonnegative().describe("Protein in grams per serving."),
+				fat_g: z.number().nonnegative().describe("Fat in grams per serving."),
+				carbs_g: z.number().nonnegative().describe("Carbohydrates in grams per serving."),
+				fiber_g: z
+					.number()
+					.nonnegative()
+					.optional()
+					.default(0)
+					.describe("Fiber in grams per serving (default 0)."),
+				sugar_g: z
+					.number()
+					.nonnegative()
+					.optional()
+					.default(0)
+					.describe("Sugar in grams per serving (default 0)."),
+				sodium_mg: z
+					.number()
+					.nonnegative()
+					.optional()
+					.default(0)
+					.describe("Sodium in milligrams per serving (default 0)."),
+				serving_name: z
+					.string()
+					.optional()
+					.default("1 serving")
+					.describe("Display name for the serving (default '1 serving')."),
+				serving_grams: z
+					.number()
+					.positive()
+					.optional()
+					.default(100)
+					.describe("Weight of one serving in grams (default 100)."),
+			},
+			async ({
+				name,
+				calories,
+				protein_g,
+				fat_g,
+				carbs_g,
+				fiber_g,
+				sugar_g,
+				sodium_mg,
+				serving_name,
+				serving_grams,
+			}) => {
+				try {
+					const client = this.getClient();
+					const result = await client.createCustomFood({
+						name,
+						calories,
+						protein_g,
+						fat_g,
+						carbs_g,
+						fiber_g,
+						sugar_g,
+						sodium_mg,
+						serving_name,
+						serving_grams,
+					});
+					return {
+						content: [
+							{
+								type: "text",
+								text:
+									result.food_id != null
+										? `✓ Created custom food "${name}" (food_id: ${result.food_id}). Use log_food with this food_id to add it to your diary.`
+										: `Custom food "${name}" may have been created (no id returned — check search_food to confirm).`,
+							},
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// READ — FASTING HISTORY
+		// ============================================
+		this.server.tool(
+			"get_fasting_history",
+			{
+				start_date: z
+					.string()
+					.optional()
+					.describe("Start date (YYYY-MM-DD). Defaults to 30 days ago."),
+				end_date: z
+					.string()
+					.optional()
+					.describe("End date (YYYY-MM-DD). Defaults to today."),
+			},
+			async ({ start_date, end_date }) => {
+				try {
+					const today = todayDate();
+					const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000)
+						.toISOString()
+						.slice(0, 10);
+					const end = end_date ?? today;
+					const start = start_date ?? thirtyDaysAgo;
+					validateDate(start, "start_date");
+					validateDate(end, "end_date");
+
+					const client = this.getClient();
+					const raw = await client.getFastingHistory(toCronoDay(start), toCronoDay(end));
+
+					return {
+						content: [
+							{ type: "text", text: `Fasting history ${start} → ${end}` },
+							{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
+						],
+					};
+				} catch (error) {
+					return handleError(error);
+				}
+			},
+		);
+
+		// ============================================
+		// READ — FASTING STATS
+		// ============================================
+		this.server.tool("get_fasting_stats", {}, async () => {
+			try {
+				const client = this.getClient();
+				const raw = await client.getFastingStats();
+
+				return {
+					content: [
+						{ type: "text", text: "Overall fasting statistics" },
+						{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
+					],
+				};
+			} catch (error) {
+				return handleError(error);
+			}
+		});
 	}
 }

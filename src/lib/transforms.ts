@@ -32,6 +32,14 @@ export const MEAL_GROUPS = {
 
 export type MealName = keyof typeof MEAL_GROUPS;
 
+/** Reverse map: meal group number → name (for display). */
+export const MEAL_NAMES: Record<number, string> = {
+	1: "breakfast",
+	2: "lunch",
+	3: "dinner",
+	4: "snacks",
+};
+
 /** Today's date in YYYY-MM-DD (UTC). */
 export function todayDate(): string {
 	return new Date().toISOString().slice(0, 10);

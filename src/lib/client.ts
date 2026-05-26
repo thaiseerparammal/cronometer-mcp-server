@@ -323,6 +323,48 @@ export class CronometerClient {
 	}
 
 	/**
+	 * Update an existing diary serving by replacing it (delete + re-add with new
+	 * values). Both operations are confirmed working, making this approach safe
+	 * even though it changes the servingId.
+	 */
+	async updateServing(options: {
+		day: string; // Cronometer format, e.g. "2026-5-26"
+		servingId: string | number;
+		grams?: number;
+		mealGroup?: number;
+	}): Promise<any> {
+		const diary = await this.getDiary(options.day);
+		const entries: any[] = Array.isArray(diary?.diary) ? diary.diary : [];
+		const entry = entries.find(
+			(e) => String(e?.servingId ?? e?.id) === String(options.servingId),
+		);
+		if (!entry) {
+			throw new Error(
+				`Serving id ${options.servingId} not found in diary for ${options.day}`,
+			);
+		}
+
+		await this.deleteServings(options.day, [options.servingId]);
+
+		const now = new Date();
+		const nowTimeStr = `${now.getUTCHours()}:${now.getUTCMinutes()}:${now.getUTCSeconds()}`;
+		const mealGroup =
+			options.mealGroup ??
+			(typeof entry.order === "number" ? entry.order >> 16 : 1);
+		const grams = options.grams ?? entry.grams;
+
+		return this.addServing({
+			foodId: entry.foodId,
+			measureId: entry.measureId,
+			grams,
+			day: options.day,
+			time: entry.time ?? nowTimeStr,
+			mealGroup,
+			translationId: entry.translationId ?? 0,
+		});
+	}
+
+	/**
 	 * Delete diary servings by their servingId. Fetches the day's diary to get
 	 * the full serving objects (required by the v3 API), then issues a v3 DELETE
 	 * (auth via x-crono-session header). Returns the count removed.
@@ -362,5 +404,144 @@ export class CronometerClient {
 			);
 		}
 		return toDelete.length;
+	}
+
+	// ============================================
+	// DIARY UTILITIES
+	// ============================================
+
+	/** Copy diary entries from one day to another. Defaults to yesterday → today. */
+	async copyDay(from: string, to: string): Promise<any> {
+		return this.v2<any>("/api/v2/copy", {
+			from,
+			to,
+			diaryGroupNumber: null,
+			config: { call_version: 1 },
+		});
+	}
+
+	/** Mark a diary day as complete (or incomplete). */
+	async setDayComplete(day: string, complete: boolean): Promise<any> {
+		return this.v2<any>("/api/v2/set_complete", {
+			day,
+			complete,
+			config: { call_version: 1 },
+		});
+	}
+
+	// ============================================
+	// NUTRITION SCORES
+	// ============================================
+
+	/**
+	 * Get Cronometer's nutrition quality scores for a day. Scores reflect how
+	 * well consumed foods hit micronutrient targets (A-F style ratings per
+	 * category). The servingIds for the day are resolved from get_diary first.
+	 */
+	async getNutritionScores(day: string): Promise<any> {
+		const diary = await this.getDiary(day);
+		const entries: any[] = Array.isArray(diary?.diary) ? diary.diary : [];
+		const servingIds = entries
+			.filter((e) => e?.type === undefined || e?.type === "Serving")
+			.map((e) => e.servingId)
+			.filter((id) => id != null);
+		return this.v2<any>("/api/v2/get_nutrition_scores", {
+			startDay: "1900-1-1",
+			endDay: "1900-1-1",
+			servingIds,
+			supplements: "true",
+			config: { call_version: 1 },
+		});
+	}
+
+	// ============================================
+	// CUSTOM FOODS
+	// ============================================
+
+	/**
+	 * Create a custom food in the user's Cronometer food database. All nutrient
+	 * values passed are per-serving; they are auto-scaled to per-100g for storage.
+	 */
+	async createCustomFood(food: {
+		name: string;
+		calories: number;
+		protein_g: number;
+		fat_g: number;
+		carbs_g: number;
+		fiber_g?: number;
+		sugar_g?: number;
+		sodium_mg?: number;
+		serving_name?: string;
+		serving_grams?: number;
+	}): Promise<{ food_id: number | null }> {
+		const servingGrams = food.serving_grams ?? 100;
+		const scale = servingGrams > 0 ? 100 / servingGrams : 1;
+		const fiber = food.fiber_g ?? 0;
+		const netCarbs = Math.max(0, food.carbs_g - fiber);
+
+		const r = (x: number) => Math.round(x * 100) / 100;
+		const nutrients = [
+			{ id: 208, amount: r(food.calories * scale) },
+			{ id: 203, amount: r(food.protein_g * scale) },
+			{ id: 204, amount: r(food.fat_g * scale) },
+			{ id: 205, amount: r(food.carbs_g * scale) },
+			{ id: 291, amount: r(fiber * scale) },
+			{ id: 269, amount: r((food.sugar_g ?? 0) * scale) },
+			{ id: 307, amount: r((food.sodium_mg ?? 0) * scale) },
+			{ id: -203, amount: r(food.protein_g * scale) },
+			{ id: -204, amount: r(food.fat_g * scale) },
+			{ id: -205, amount: r(food.carbs_g * scale) },
+			{ id: -221, amount: 0 },
+			{ id: -1205, amount: r(netCarbs * scale) },
+		];
+
+		const data = await this.v2<any>("/api/v2/add_food", {
+			data: {
+				id: 0,
+				name: food.name,
+				category: 0,
+				owner: null,
+				retired: null,
+				source: null,
+				defaultMeasureId: 0,
+				comments: null,
+				alternateId: null,
+				measures: [
+					{
+						id: 0,
+						name: food.serving_name ?? "1 serving",
+						value: servingGrams,
+						amount: 1.0,
+						type: "Atomic",
+					},
+				],
+				labelType: "AMERICAN_2016",
+				nutrients,
+				properties: {},
+				foodTags: [],
+			},
+			config: { call_version: 1 },
+		});
+		return { food_id: data?.id ?? null };
+	}
+
+	// ============================================
+	// FASTING
+	// ============================================
+
+	/** Get fasting sessions within a date range (Cronometer format YYYY-M-D). */
+	async getFastingHistory(start: string, end: string): Promise<any> {
+		return this.v2<any>("/api/v2/get_fasting_with_date_range", {
+			start,
+			end,
+			config: { call_version: 1 },
+		});
+	}
+
+	/** Get overall fasting statistics (totals, longest fast, averages). */
+	async getFastingStats(): Promise<any> {
+		return this.v2<any>("/api/v2/get_fasting_stats", {
+			config: { call_version: 1 },
+		});
 	}
 }
