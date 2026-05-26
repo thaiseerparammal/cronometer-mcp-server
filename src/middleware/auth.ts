@@ -14,23 +14,35 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Static bearer-token auth. The MCP client must send
- * `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+ * Static bearer-token auth. Accepts the token in either:
+ *   - Authorization: Bearer <token>  header, OR
+ *   - ?token=<token>                 query parameter
+ *
+ * The query-param form lets mcp-remote (Claude Desktop) connect without
+ * needing --header support, using a URL like /mcp?token=<token>.
  */
 export const bearerAuth = createMiddleware<{ Bindings: Env; Variables: Variables }>(
 	async (c, next) => {
-		const authHeader = c.req.header("Authorization");
+		const expected = c.env.MCP_AUTH_TOKEN;
 
-		if (!authHeader || !authHeader.startsWith("Bearer ")) {
+		// Extract token from header or query param
+		const authHeader = c.req.header("Authorization");
+		const queryToken = c.req.query("token");
+
+		let token: string | undefined;
+		if (authHeader?.startsWith("Bearer ")) {
+			token = authHeader.substring(7);
+		} else if (queryToken) {
+			token = queryToken;
+		}
+
+		if (!token) {
 			return c.json(
-				{ error: "unauthorized", message: "Provide a valid Bearer token." },
+				{ error: "unauthorized", message: "Provide a Bearer token via Authorization header or ?token= query param." },
 				401,
 				{ "WWW-Authenticate": `Bearer realm="${c.req.url}", error="invalid_token"` },
 			);
 		}
-
-		const token = authHeader.substring(7);
-		const expected = c.env.MCP_AUTH_TOKEN;
 
 		if (!expected || !safeEqual(token, expected)) {
 			return c.json({ error: "unauthorized", message: "Invalid token." }, 401);
