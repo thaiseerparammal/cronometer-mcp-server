@@ -80,12 +80,35 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 					const entries = parseDiary(diaryRaw);
 					const totals = parseConsumed(diaryRaw);
 
+					// Diary entries carry only a foodId, so resolve real food names
+					// via get_food for each unique id (capped to keep it snappy).
+					const nameById = new Map<number, string>();
+					const uniqueIds = [
+						...new Set(
+							entries
+								.map((e) => e.foodId)
+								.filter((id): id is number => typeof id === "number"),
+						),
+					].slice(0, 30);
+					await Promise.all(
+						uniqueIds.map(async (id) => {
+							try {
+								const food = await client.getFood(id);
+								if (food?.name) nameById.set(id, String(food.name));
+							} catch {
+								/* leave unresolved — falls back to the parsed name */
+							}
+						}),
+					);
+
 					const list =
 						entries.length > 0
 							? entries
 									.map((e) => {
+										const name =
+											(e.foodId != null && nameById.get(e.foodId)) || e.name;
 										const grams = e.grams != null ? ` — ${e.grams} g` : "";
-										return `   - ${e.name}${grams}`;
+										return `   - ${name}${grams}`;
 									})
 									.join("\n")
 							: "No food logged for this date.";

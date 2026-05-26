@@ -321,4 +321,46 @@ export class CronometerClient {
 			config: { call_version: 2 },
 		});
 	}
+
+	/**
+	 * Delete diary servings by their servingId. Fetches the day's diary to get
+	 * the full serving objects (required by the v3 API), then issues a v3 DELETE
+	 * (auth via x-crono-session header). Returns the count removed.
+	 */
+	async deleteServings(day: string, servingIds: Array<string | number>): Promise<number> {
+		await this.ensureAuth();
+		const diary = await this.getDiary(day);
+		const entries: any[] = Array.isArray(diary?.diary) ? diary.diary : [];
+		const idSet = new Set(servingIds.map((s) => String(s)));
+		const toDelete = entries.filter((e) => idSet.has(String(e?.servingId ?? e?.id)));
+		if (toDelete.length === 0) {
+			return 0;
+		}
+
+		const res = await fetch(
+			`${this.baseUrl}/api/v3/user/${this.userId}/diary-entries`,
+			{
+				method: "DELETE",
+				headers: {
+					"x-crono-session": this.sessionKey ?? "",
+					"x-crono-app-os": "android",
+					"x-crono-app-build-number": "2807",
+					"x-crono-app-version": "4.48.2",
+					"Content-Type": "application/json; charset=utf-8",
+					"User-Agent": USER_AGENT,
+				},
+				body: JSON.stringify({ diaryEntries: toDelete }),
+			},
+		);
+
+		if (res.status !== 204 && !res.ok) {
+			const data = await this.parseBody(res);
+			throw new CronometerApiError(
+				`Cronometer delete failed: ${res.status} ${res.statusText}`,
+				res.status,
+				data,
+			);
+		}
+		return toDelete.length;
+	}
 }
