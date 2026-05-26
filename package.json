@@ -1,0 +1,36 @@
+{
+	"name": "cronometer-mcp-server",
+	"version": "1.0.0",
+	"description": "A Model Context Protocol (MCP) server for Cronometer nutrition data, deployed on Cloudflare Workers with Hono. Mirrors the architecture of the Hevy and MyFitnessPal MCP servers.",
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"cronometer",
+		"nutrition",
+		"cloudflare-workers",
+		"ai",
+		"claude"
+	],
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev --env dev --port 8788",
+		"format": "biome format --write",
+		"lint:fix": "biome lint --fix",
+		"start": "wrangler dev --env dev --port 8788",
+		"cf-typegen": "wrangler types",
+		"type-check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "1.23.0",
+		"agents": "0.2.8",
+		"hono": "^4.10.1",
+		"zod": "^3.25.76"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.5",
+		"@cloudflare/workers-types": "^4.20251011.0",
+		"@types/node": "^24.7.2",
+		"typescript": "5.9.3",
+		"wrangler": "^4.45.0"
+	}
+}

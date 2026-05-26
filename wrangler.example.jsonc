@@ -1,0 +1,50 @@
+/**
+ * Wrangler configuration template.
+ * Copy this file to `wrangler.jsonc` (it has no per-account ids to fill in).
+ *
+ * Secrets (NOT stored here — set with `wrangler secret put`):
+ *   - MCP_AUTH_TOKEN       Static bearer token Claude must send to use the server.
+ *                          Generate with: openssl rand -hex 32
+ *   - CRONOMETER_EMAIL     Your Cronometer account email.
+ *   - CRONOMETER_PASSWORD  Your Cronometer account password.
+ *
+ * For more details: https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cronometer-mcp-server",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-03-10",
+	"compatibility_flags": ["nodejs_compat"],
+	"migrations": [
+		{
+			"new_sqlite_classes": ["MyMCP"],
+			"tag": "v1"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "MyMCP",
+				"name": "MCP_OBJECT"
+			}
+		]
+	},
+	"observability": {
+		"enabled": true
+	},
+	"workers_dev": true,
+	"env": {
+		"dev": {
+			"name": "cronometer-mcp-server-dev",
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "MyMCP",
+						"name": "MCP_OBJECT"
+					}
+				]
+			}
+		}
+	}
+}

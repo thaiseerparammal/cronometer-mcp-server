@@ -1,0 +1,11 @@
+# Local development secrets for the Cronometer MCP server.
+# Copy this file to `.dev.vars` and fill in your own values.
+
+# Static bearer token the MCP client (Claude) must send in the Authorization header.
+# Generate with: openssl rand -hex 32
+MCP_AUTH_TOKEN=your_mcp_auth_token_here
+
+# Your Cronometer account login. The server logs in to mobile.cronometer.com
+# with these and re-authenticates automatically when the session expires.
+CRONOMETER_EMAIL=you@example.com
+CRONOMETER_PASSWORD=your_cronometer_password
