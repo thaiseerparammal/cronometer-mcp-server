@@ -8,6 +8,10 @@
 		{
 			"new_sqlite_classes": ["MyMCP"],
 			"tag": "v1"
+		},
+		{
+			"new_classes": ["SessionStore"],
+			"tag": "v2"
 		}
 	],
 	"durable_objects": {
@@ -15,6 +19,10 @@
 			{
 				"class_name": "MyMCP",
 				"name": "MCP_OBJECT"
+			},
+			{
+				"class_name": "SessionStore",
+				"name": "SESSION_STORE"
 			}
 		]
 	},
