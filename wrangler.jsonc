@@ -10,7 +10,7 @@
 			"tag": "v1"
 		},
 		{
-			"new_classes": ["SessionStore"],
+			"new_sqlite_classes": ["SessionStore"],
 			"tag": "v2"
 		}
 	],
