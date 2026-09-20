@@ -9,3 +9,8 @@ MCP_AUTH_TOKEN=your_mcp_auth_token_here
 # with these and re-authenticates automatically when the session expires.
 CRONOMETER_EMAIL=you@example.com
 CRONOMETER_PASSWORD=your_cronometer_password
+
+# IANA timezone your Cronometer diary is kept in, e.g. Asia/Kolkata.
+# Cloudflare Workers always run on a UTC clock, so this is what decides which
+# day a food is logged to and what time is stamped on it. Defaults to UTC.
+TIMEZONE=UTC

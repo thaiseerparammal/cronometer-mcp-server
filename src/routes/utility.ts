@@ -2,6 +2,12 @@ import { Hono } from "hono";
 import type { Env, Variables } from "../types.js";
 import { CronometerClient } from "../lib/client.js";
 import { TOOL_CATALOG, TOOL_COUNT, TOOL_NAMES } from "../lib/tool-catalog.js";
+import {
+	nowTime,
+	resolveTimeZone,
+	timeZoneOffsetMinutes,
+	todayDate,
+} from "../lib/transforms.js";
 
 const utilityRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -32,8 +38,20 @@ utilityRoutes.get("/health", async (c) => {
 		}
 	}
 
+	// Timezone diagnostics: a Worker's clock is always UTC, so this shows what
+	// day/time a food logged right now would actually be stamped with.
+	const timeZone = resolveTimeZone(c.env.TIMEZONE);
+
 	return c.json({
 		status: "healthy",
+		timezone: {
+			configured: c.env.TIMEZONE ?? null,
+			effective: timeZone,
+			utc_now: new Date().toISOString(),
+			offset_minutes: timeZoneOffsetMinutes(timeZone),
+			local_date: todayDate(timeZone),
+			local_time: nowTime(timeZone),
+		},
 		transport: "streamable-http",
 		version: "1.0.0",
 		auth: "static-bearer",

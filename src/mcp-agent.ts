@@ -19,6 +19,9 @@ import {
 	parseDiary,
 	parseFoodSearch,
 	parseGoals,
+	resolveTimeZone,
+	shiftDate,
+	timeZoneOffsetMinutes,
 	toCronoDay,
 	todayDate,
 	validateDate,
@@ -41,6 +44,11 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 	});
 
 	initialState: AgentState = { session: null };
+
+	/** IANA timezone the diary is kept in (TIMEZONE var; UTC if unset). */
+	private get timeZone(): string {
+		return resolveTimeZone(this.env.TIMEZONE);
+	}
 
 	private getSessionStub() {
 		return this.env.SESSION_STORE.get(
@@ -105,6 +113,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			email,
 			password,
 			session,
+			timeZone: this.timeZone,
 			onSession: (s) => {
 				this.setState({ session: s });   // sync: local SQLite
 				this.saveSharedSession(s);        // async fire-and-forget: shared store
@@ -127,7 +136,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ date }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 					const cronoDay = toCronoDay(d);
 
@@ -252,7 +261,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 		this.server.tool("get_goals", TOOL_CATALOG.get_goals, {}, async () => {
 			try {
 				const client = await this.getClient();
-				const diaryRaw = await client.getDiary(toCronoDay(todayDate()));
+				const diaryRaw = await client.getDiary(toCronoDay(todayDate(this.timeZone)));
 				const { goals, raw } = parseGoals(diaryRaw);
 
 				return {
@@ -283,7 +292,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ date }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 					const client = await this.getClient();
 					const raw = await client.getNutritionScores(toCronoDay(d));
@@ -387,7 +396,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ meal_name, food_id, grams, measure_id, date }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 
 					const client = await this.getClient();
@@ -406,7 +415,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 						measureId: resolvedMeasureId ?? 0,
 						grams,
 						day: toCronoDay(d),
-						time: nowTime(),
+						time: nowTime(this.timeZone),
 						mealGroup: MEAL_GROUPS[meal_name as MealName],
 					});
 
@@ -445,7 +454,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ serving_ids, date }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 					const client = await this.getClient();
 					const count = await client.deleteServings(toCronoDay(d), serving_ids);
@@ -494,7 +503,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ serving_id, grams, meal_name, date }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 					if (grams == null && meal_name == null) {
 						return {
@@ -554,10 +563,8 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			async ({ from_date, to_date }) => {
 				try {
 					// Default: yesterday → today
-					const today = todayDate();
-					const yesterday = new Date(Date.now() - 86_400_000)
-						.toISOString()
-						.slice(0, 10);
+					const today = todayDate(this.timeZone);
+					const yesterday = shiftDate(today, -1);
 					const toD = to_date ?? today;
 					const fromD = from_date ?? yesterday;
 					validateDate(fromD, "from_date");
@@ -600,7 +607,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ date, complete }) => {
 				try {
-					const d = date ?? todayDate();
+					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
 					const client = await this.getClient();
 					const raw = await client.setDayComplete(toCronoDay(d), complete ?? true);
@@ -720,10 +727,8 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 			},
 			async ({ start_date, end_date }) => {
 				try {
-					const today = todayDate();
-					const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000)
-						.toISOString()
-						.slice(0, 10);
+					const today = todayDate(this.timeZone);
+					const thirtyDaysAgo = shiftDate(today, -30);
 					const end = end_date ?? today;
 					const start = start_date ?? thirtyDaysAgo;
 					validateDate(start, "start_date");
@@ -747,6 +752,30 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 		// ============================================
 		// READ — FASTING STATS
 		// ============================================
+		this.server.tool("get_server_time", TOOL_CATALOG.get_server_time, {}, async () => {
+			const tz = this.timeZone;
+			const date = todayDate(tz);
+			const time = nowTime(tz);
+
+			const offset = timeZoneOffsetMinutes(tz);
+			const sign = offset < 0 ? "-" : "+";
+			const hh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0");
+			const mm = String(Math.abs(offset) % 60).padStart(2, "0");
+
+			const lines = [
+				`Configured TIMEZONE: ${this.env.TIMEZONE ?? "(unset)"} → effective ${tz} (UTC${sign}${hh}:${mm})`,
+				`Worker UTC clock:    ${new Date().toISOString()}`,
+				`Local wall clock:    ${date} ${time}`,
+				`A food logged right now is stamped day=${toCronoDay(date)} time=${time}.`,
+			];
+			if (tz === "UTC" && this.env.TIMEZONE && this.env.TIMEZONE !== "UTC") {
+				lines.push(
+					`⚠ TIMEZONE "${this.env.TIMEZONE}" is not a valid IANA zone — the server fell back to UTC.`,
+				);
+			}
+			return { content: [{ type: "text", text: lines.join("\n") }] };
+		});
+
 		this.server.tool("get_fasting_stats", TOOL_CATALOG.get_fasting_stats, {}, async () => {
 			try {
 				const client = await this.getClient();

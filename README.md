@@ -50,9 +50,42 @@ npx wrangler secret put CRONOMETER_PASSWORD                             # your C
 
 There is **no web setup form** — your password never passes through a browser. Credentials live only as Cloudflare secrets (encrypted at rest) and are read by the Worker at runtime.
 
+### 5. Set your timezone
+
+A Cloudflare Worker's clock is **always UTC**. If you leave `TIMEZONE` unset, every
+food is logged against the UTC date and stamped with the UTC time — so a 1:00 pm
+IST lunch shows up in Cronometer at 7:30 am, and anything eaten before 5:30 am IST
+lands on the previous day.
+
+Set it to your own IANA zone in `wrangler.jsonc` (both the top-level `vars` block
+and the `env.dev` one — named environments do not inherit top-level vars):
+
+```jsonc
+"vars": { "TIMEZONE": "Asia/Kolkata" }
+```
+
+Then redeploy with `npx wrangler deploy`.
+
 ### Verify it works
 
-Visit `https://<your-worker>.workers.dev/health?verify=1`. A successful response includes `"login_ok": true`.
+Visit `https://<your-worker>.workers.dev/health?verify=1`. A successful response
+includes `"login_ok": true` and a `timezone` block showing the effective zone and
+the local date/time a food logged right now would receive:
+
+```json
+"timezone": {
+  "configured": "Asia/Kolkata",
+  "effective": "Asia/Kolkata",
+  "utc_now": "2026-09-20T07:30:00.000Z",
+  "offset_minutes": 330,
+  "local_date": "2026-09-20",
+  "local_time": "13:00:00"
+}
+```
+
+If `effective` reads `UTC` while `configured` shows your zone, the name was not a
+valid IANA zone and the server fell back to UTC. The same information is available
+from Claude via the `get_server_time` tool.
 
 ## Connect from Claude
 

@@ -40,9 +40,100 @@ export const MEAL_NAMES: Record<number, string> = {
 	4: "snacks",
 };
 
-/** Today's date in YYYY-MM-DD (UTC). */
-export function todayDate(): string {
-	return new Date().toISOString().slice(0, 10);
+/**
+ * Default IANA timezone used when the Worker has no TIMEZONE var configured.
+ *
+ * A Cloudflare Worker always runs with its process clock in UTC, so every
+ * "today" / "now" the server derives must be converted into the user's own
+ * zone explicitly. Leaving this at UTC reproduces the original behaviour.
+ */
+export const DEFAULT_TIMEZONE = "UTC";
+
+/** Validate an IANA timezone name, falling back to UTC if unusable. */
+export function resolveTimeZone(tz?: string | null): string {
+	const candidate = (tz ?? "").trim();
+	if (!candidate) {
+		return DEFAULT_TIMEZONE;
+	}
+	try {
+		new Intl.DateTimeFormat("en-CA", { timeZone: candidate }).format();
+		return candidate;
+	} catch {
+		console.warn(
+			`Invalid TIMEZONE "${candidate}" — falling back to ${DEFAULT_TIMEZONE}.`,
+		);
+		return DEFAULT_TIMEZONE;
+	}
+}
+
+export interface ZonedParts {
+	year: string;
+	month: string;
+	day: string;
+	hour: string;
+	minute: string;
+	second: string;
+}
+
+/** Wall-clock parts of an instant, as seen in the given IANA timezone. */
+export function zonedParts(
+	timeZone: string = DEFAULT_TIMEZONE,
+	at: Date = new Date(),
+): ZonedParts {
+	const parts = new Intl.DateTimeFormat("en-CA", {
+		timeZone: resolveTimeZone(timeZone),
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		// h23 rather than hour12:false: the latter can yield "24" at midnight.
+		hourCycle: "h23",
+	}).formatToParts(at);
+
+	const out: Record<string, string> = {};
+	for (const { type, value } of parts) {
+		out[type] = value;
+	}
+	return out as unknown as ZonedParts;
+}
+
+/** Today's date in YYYY-MM-DD, as seen in the given timezone. */
+export function todayDate(timeZone: string = DEFAULT_TIMEZONE): string {
+	const { year, month, day } = zonedParts(timeZone);
+	return `${year}-${month}-${day}`;
+}
+
+/**
+ * Shift a YYYY-MM-DD date by a whole number of days.
+ *
+ * Pure calendar arithmetic on the date string — deliberately not
+ * `Date.now() - n * 86400000`, which drifts across a DST boundary and, worse,
+ * resolves against UTC rather than the user's zone.
+ */
+export function shiftDate(date: string, days: number): string {
+	const base = new Date(`${date}T00:00:00Z`);
+	base.setUTCDate(base.getUTCDate() + days);
+	return base.toISOString().slice(0, 10);
+}
+
+/** The UTC offset of a timezone at an instant, in minutes (IST → 330). */
+export function timeZoneOffsetMinutes(
+	timeZone: string = DEFAULT_TIMEZONE,
+	at: Date = new Date(),
+): number {
+	const { year, month, day, hour, minute, second } = zonedParts(timeZone, at);
+	const asUtc = Date.UTC(
+		Number(year),
+		Number(month) - 1,
+		Number(day),
+		Number(hour),
+		Number(minute),
+		Number(second),
+	);
+	// Wall clock minus the real instant (seconds truncated on both sides).
+	return Math.round((asUtc - Math.floor(at.getTime() / 1000) * 1000) / 60_000);
 }
 
 /** Validate a YYYY-MM-DD date string. */
@@ -67,10 +158,16 @@ export function toCronoDay(date: string): string {
 	return `${Number(y)}-${Number(m)}-${Number(d)}`;
 }
 
-/** Current local-ish time as H:M:S (used when logging a serving). */
-export function nowTime(): string {
-	const now = new Date();
-	return `${now.getUTCHours()}:${now.getUTCMinutes()}:${now.getUTCSeconds()}`;
+/**
+ * Current wall-clock time as HH:MM:SS in the given timezone.
+ *
+ * Cronometer stores a diary serving's `time` as the local wall clock of the
+ * meal, so sending the Worker's UTC clock makes every entry appear shifted by
+ * the zone offset (a 13:00 IST lunch shows up as 07:30).
+ */
+export function nowTime(timeZone: string = DEFAULT_TIMEZONE): string {
+	const { hour, minute, second } = zonedParts(timeZone);
+	return `${hour}:${minute}:${second}`;
 }
 
 /** Coerce a value that may be a number, numeric string, or { value/amount }. */

@@ -26,6 +26,12 @@
 			}
 		]
 	},
+	"vars": {
+		// IANA timezone your Cronometer diary is kept in. A Worker's clock is
+		// always UTC, so without this "today" and a logged meal's time are both
+		// computed in UTC and land in the wrong day / hour.
+		"TIMEZONE": "Asia/Kolkata"
+	},
 	"observability": {
 		"enabled": true
 	},
@@ -33,6 +39,10 @@
 	"env": {
 		"dev": {
 			"name": "cronometer-mcp-server-dev",
+			// Named environments do not inherit top-level `vars`, so repeat it.
+			"vars": {
+				"TIMEZONE": "Asia/Kolkata"
+			},
 			"durable_objects": {
 				"bindings": [
 					{

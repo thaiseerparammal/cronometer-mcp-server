@@ -8,6 +8,11 @@
  *   - CRONOMETER_EMAIL     Your Cronometer account email.
  *   - CRONOMETER_PASSWORD  Your Cronometer account password.
  *
+ * Plain vars (set below, not secret):
+ *   - TIMEZONE             IANA timezone your diary is kept in, e.g. "Asia/Kolkata".
+ *                          Workers always run on a UTC clock, so leaving this at
+ *                          "UTC" makes foods log with UTC dates and times.
+ *
  * For more details: https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
@@ -38,6 +43,12 @@
 			}
 		]
 	},
+	"vars": {
+		// IANA timezone your Cronometer diary is kept in. A Worker's clock is
+		// always UTC, so without this "today" and a logged meal's time are both
+		// computed in UTC and land in the wrong day / hour.
+		"TIMEZONE": "UTC"
+	},
 	"observability": {
 		"enabled": true
 	},
@@ -45,6 +56,10 @@
 	"env": {
 		"dev": {
 			"name": "cronometer-mcp-server-dev",
+			// Named environments do not inherit top-level `vars`, so repeat it.
+			"vars": {
+				"TIMEZONE": "UTC"
+			},
 			"durable_objects": {
 				"bindings": [
 					{

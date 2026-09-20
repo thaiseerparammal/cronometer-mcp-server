@@ -13,6 +13,8 @@
  * returns the raw API JSON so the data is usable even if a field name differs.
  */
 
+import { nowTime, resolveTimeZone } from "./transforms.js";
+
 const DEFAULT_BASE_URL = "https://mobile.cronometer.com";
 
 // Auth metadata block the mobile app sends with every authenticated request.
@@ -170,6 +172,8 @@ export interface CronometerClientConfig {
 	/** Called whenever a new session is minted (e.g. to persist it). */
 	onSession?: (session: CronometerSession) => void;
 	baseUrl?: string;
+	/** IANA timezone the account's days and meal times are expressed in. */
+	timeZone?: string;
 }
 
 export class CronometerClient {
@@ -177,6 +181,7 @@ export class CronometerClient {
 	private password: string;
 	private baseUrl: string;
 	private onSession?: (session: CronometerSession) => void;
+	private timeZone: string;
 
 	private userId: number | null = null;
 	private sessionKey: string | null = null;
@@ -186,6 +191,7 @@ export class CronometerClient {
 		this.password = config.password;
 		this.baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
 		this.onSession = config.onSession;
+		this.timeZone = resolveTimeZone(config.timeZone);
 		if (config.session) {
 			this.userId = config.session.userId;
 			this.sessionKey = config.session.sessionKey;
@@ -219,7 +225,9 @@ export class CronometerClient {
 		const payload = {
 			email: this.email,
 			password: this.password,
-			timezone: "UTC",
+			// Cronometer rolls the day over in the account's timezone, so send the
+			// configured zone rather than the Worker's (always-UTC) clock.
+			timezone: this.timeZone,
 			userCode: null,
 			build: APP_BUILD,
 			device: APP_DEVICE,
@@ -462,8 +470,7 @@ export class CronometerClient {
 
 		await this.deleteServings(options.day, [options.servingId]);
 
-		const now = new Date();
-		const nowTimeStr = `${now.getUTCHours()}:${now.getUTCMinutes()}:${now.getUTCSeconds()}`;
+		const nowTimeStr = nowTime(this.timeZone);
 		const mealGroup =
 			options.mealGroup ??
 			(typeof entry.order === "number" ? entry.order >> 16 : 1);

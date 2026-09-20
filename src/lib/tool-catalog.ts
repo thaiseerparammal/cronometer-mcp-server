@@ -64,6 +64,12 @@ export const TOOL_CATALOG = {
 
 	get_fasting_stats:
 		"Return aggregate fasting statistics for the account — longest fast, current and longest streak, and averages. Use for overall fasting-habit questions rather than individual fasting windows.",
+
+	// ============================================
+	// DIAGNOSTICS
+	// ============================================
+	get_server_time:
+		"Return the server's configured timezone alongside its UTC clock and the date and time it would stamp on a food logged right now. Use when diary entries land on the wrong day or show the wrong time, to check whether the TIMEZONE setting is taking effect.",
 } as const;
 
 /** Every registered tool name, derived from the catalog. */
