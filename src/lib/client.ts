@@ -456,6 +456,8 @@ export class CronometerClient {
 		servingId: string | number;
 		grams?: number;
 		mealGroup?: number;
+		/** New HH:MM:SS wall-clock time; keeps the entry's existing time if omitted. */
+		time?: string;
 	}): Promise<any> {
 		const diary = await this.getDiary(options.day);
 		const entries: any[] = Array.isArray(diary?.diary) ? diary.diary : [];
@@ -481,7 +483,7 @@ export class CronometerClient {
 			measureId: entry.measureId,
 			grams,
 			day: options.day,
-			time: entry.time ?? nowTimeStr,
+			time: options.time ?? entry.time ?? nowTimeStr,
 			mealGroup,
 			translationId: entry.translationId ?? 0,
 		});

@@ -39,13 +39,13 @@ export const TOOL_CATALOG = {
 	// WRITE — DIARY ENTRIES
 	// ============================================
 	log_food:
-		"Add a food to the diary for a given meal and date, in grams. Use when the user says they ate something. Requires a food_id from search_food, and a measure_id for database foods. Returns the updated day so the new totals are visible immediately.",
+		"Add a food to the diary for a given meal and date, in grams. Use when the user says they ate something. Requires a food_id from search_food, and a measure_id for database foods. Pass `time` (HH:MM) when they are logging something eaten earlier — 'I had eggs at 7 this morning' — otherwise the entry is stamped with the current time. Returns the updated day so the new totals are visible immediately.",
 
 	delete_food:
 		"Remove one or more logged entries from the diary by serving_id. Use when the user says they did not eat something, logged it twice, or wants a day cleared. Get serving_id values from get_nutrition_diary first.",
 
 	update_food:
-		"Change an already-logged diary entry — adjust the amount in grams, or move it to a different meal. Use for 'I actually had 200g not 150g' or 'that was lunch, not dinner'. Needs the entry's serving_id from get_nutrition_diary.",
+		"Change an already-logged diary entry — adjust the amount in grams, move it to a different meal, or correct the time of day. Use for 'I actually had 200g not 150g', 'that was lunch, not dinner', or 'that should say 7am'. Needs the entry's serving_id from get_nutrition_diary.",
 
 	copy_day:
 		"Copy every food entry from one date onto another date. Use when the user ate the same thing as a previous day and wants it duplicated rather than re-logged item by item. Defaults to copying yesterday onto today.",

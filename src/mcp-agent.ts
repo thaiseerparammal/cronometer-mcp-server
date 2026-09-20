@@ -14,6 +14,7 @@ import {
 	MEAL_GROUPS,
 	MEAL_NAMES,
 	type MealName,
+	normalizeTime,
 	nowTime,
 	parseConsumed,
 	parseDiary,
@@ -393,11 +394,18 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 					.string()
 					.optional()
 					.describe("Date in YYYY-MM-DD format. Defaults to today."),
+				time: z
+					.string()
+					.optional()
+					.describe(
+						'Time of day the food was eaten, as HH:MM or HH:MM:SS (am/pm also accepted), e.g. "07:30". Use this when logging something eaten earlier — otherwise the entry is stamped with the current time.',
+					),
 			},
-			async ({ meal_name, food_id, grams, measure_id, date }) => {
+			async ({ meal_name, food_id, grams, measure_id, date, time }) => {
 				try {
 					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
+					const t = time ? normalizeTime(time, "time") : nowTime(this.timeZone);
 
 					const client = await this.getClient();
 
@@ -415,7 +423,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 						measureId: resolvedMeasureId ?? 0,
 						grams,
 						day: toCronoDay(d),
-						time: nowTime(this.timeZone),
+						time: t,
 						mealGroup: MEAL_GROUPS[meal_name as MealName],
 					});
 
@@ -423,7 +431,7 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 						content: [
 							{
 								type: "text",
-								text: `✓ Logged ${grams} g of food ${food_id} to ${meal_name} on ${d}.`,
+								text: `✓ Logged ${grams} g of food ${food_id} to ${meal_name} on ${d} at ${t}.`,
 							},
 							{ type: "text", text: `\n\nRaw API response:\n${JSON.stringify(raw, null, 2)}` },
 						],
@@ -500,17 +508,27 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 					.string()
 					.optional()
 					.describe("Date the entry is on (YYYY-MM-DD). Defaults to today."),
+				time: z
+					.string()
+					.optional()
+					.describe(
+						'Correct the time of day on the entry, as HH:MM or HH:MM:SS (am/pm also accepted), e.g. "07:30". The existing time is kept if omitted.',
+					),
 			},
-			async ({ serving_id, grams, meal_name, date }) => {
+			async ({ serving_id, grams, meal_name, date, time }) => {
 				try {
 					const d = date ?? todayDate(this.timeZone);
 					validateDate(d, "date");
-					if (grams == null && meal_name == null) {
+					// Resolve the time before the guard: an update is applied as a
+					// delete + re-add, which mints a new serving_id, so an edit that
+					// would change nothing must not reach the API.
+					const t = time ? normalizeTime(time, "time") : undefined;
+					if (grams == null && meal_name == null && t == null) {
 						return {
 							content: [
 								{
 									type: "text",
-									text: "Provide at least one of: grams, meal_name.",
+									text: "Provide at least one of: grams, meal_name, time.",
 								},
 							],
 						};
@@ -523,10 +541,12 @@ export class MyMCP extends McpAgent<Env, AgentState, Props> {
 						servingId: serving_id,
 						grams,
 						mealGroup,
+						time: t,
 					});
 					const parts: string[] = [];
 					if (grams != null) parts.push(`${grams} g`);
 					if (meal_name != null) parts.push(`moved to ${meal_name}`);
+					if (t != null) parts.push(`time set to ${t}`);
 					return {
 						content: [
 							{

@@ -12,7 +12,19 @@ A personal [Model Context Protocol](https://modelcontextprotocol.io/) server tha
 | `get_nutrition_summary` | Aggregated daily totals over a date range, with overall and 7-day averages. |
 | `get_goals` | Your current calorie and macro (protein/carb/fat) targets. |
 | `search_food` | Search the Cronometer food database. |
-| `log_food` | Log a food serving to a meal (breakfast/lunch/dinner/snacks). |
+| `log_food` | Log a food serving to a meal (breakfast/lunch/dinner/snacks), optionally at a given `date` and `time`. |
+| `update_food` | Change a logged entry's amount, meal, or time of day. |
+| `get_server_time` | Show the configured timezone and what day/time a food logged now would receive. |
+
+### Backdating an entry
+
+`log_food` stamps the current time in your `TIMEZONE` unless you pass one. To log
+something you ate earlier, give it a `time` (and a `date` if it was not today):
+
+> "log 2 eggs to breakfast at 7:30 this morning"
+
+`time` accepts `HH:MM`, `HH:MM:SS`, or a 12-hour form like `7:30 am`. To fix an
+entry that was already logged at the wrong time, pass `time` to `update_food`.
 
 ## How it works
 

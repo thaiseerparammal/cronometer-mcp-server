@@ -170,6 +170,51 @@ export function nowTime(timeZone: string = DEFAULT_TIMEZONE): string {
 	return `${hour}:${minute}:${second}`;
 }
 
+/**
+ * Normalise a user-supplied time of day to the HH:MM:SS the diary expects.
+ *
+ * Accepts 24-hour ("7:30", "07:30:15", "19:05") and, because a model relaying
+ * what someone said will often keep their wording, 12-hour with a suffix
+ * ("7:30 am", "7:30PM"). Seconds are optional and default to 00.
+ */
+export function normalizeTime(input: string, fieldName = "time"): string {
+	const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(
+		input.trim(),
+	);
+	if (!match) {
+		throw new ValidationError(
+			`${fieldName} must look like HH:MM or HH:MM:SS, optionally with am/pm (e.g. "07:30", "7:30 am", "19:05:00"), got "${input}"`,
+		);
+	}
+
+	const [, rawHour, rawMinute, rawSecond, meridiem] = match;
+	let hour = Number(rawHour);
+	const minute = Number(rawMinute);
+	const second = Number(rawSecond ?? "0");
+
+	if (meridiem) {
+		if (hour < 1 || hour > 12) {
+			throw new ValidationError(
+				`${fieldName} hour must be 1-12 when am/pm is given, got "${input}"`,
+			);
+		}
+		hour = meridiem.toLowerCase() === "pm" ? (hour % 12) + 12 : hour % 12;
+	} else if (hour > 23) {
+		throw new ValidationError(
+			`${fieldName} hour must be 0-23, got "${input}"`,
+		);
+	}
+
+	if (minute > 59 || second > 59) {
+		throw new ValidationError(
+			`${fieldName} minutes and seconds must be 0-59, got "${input}"`,
+		);
+	}
+
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${pad(hour)}:${pad(minute)}:${pad(second)}`;
+}
+
 /** Coerce a value that may be a number, numeric string, or { value/amount }. */
 function num(value: unknown): number {
 	if (value == null) {
